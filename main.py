@@ -15,7 +15,7 @@ from graduation import (
     predict,
 )
 
-app = FastAPI(title="Fitness Chatbot API")
+app = FastAPI(title="Bonyaan Chatbot API")
 
 app.add_middleware(
     CORSMiddleware,
