@@ -213,7 +213,7 @@ def get_response(label, user_input, entity, user_data={}):
         if result is None:
             return f"[{label} | entity: {entity}]"
         return result
-    return "معلش، مش قادر أساعدك دلوقتي."
+    return "معلش، مش قادر أساعدك في اللي بتسأل عنه دلوقتي."
 
 def deliver_response(label, user_input, entity, original_text):
     response = get_response(label, user_input, entity)
@@ -224,16 +224,8 @@ def deliver_response(label, user_input, entity, original_text):
 def build_clarification_question(best_label, s_label, entity_best, entity_second, user_input):
     desc1 = CLASS_DESCRIPTIONS.get(best_label, best_label)
     desc2 = CLASS_DESCRIPTIONS.get(s_label, s_label)
-
-    if entity_best and entity_second:
-        return f"{desc1(entity_best)} ولا {desc2(entity_second)} ولا حاجة تانية غير دول؟"
-    elif entity_best:
-        return f"{desc1(entity_best)} ولا حاجة تانية غيرها؟"
-    elif entity_second:
-        return f"{desc2(entity_second)} ولا حاجة تانية غيرها؟"
-    else:
-        return f"{desc1()} ولا {desc2()}؟ ولا عايز حاجة غيرهم؟"
-
+    return f"{desc1(entity_best)} ولا {desc2(entity_second)} ولا حاجة تانية غير دول؟"
+  
 # ============================================================
 # MAIN CHAT LOOP
 # ============================================================
@@ -262,7 +254,7 @@ def chat(model, vectorizer):
         if waiting_for == "entity_confirm":
             user_lower = user_input.lower()
 
-            if any(w in user_lower for w in ["اه", "أيوه", "ايوه", "yes", "آه"]):
+            if any(w in user_lower for w in ["اه", "أيوه", "ايوه", "yes", "آه","صح","correct","yeah"]):
                 fake_input = f"{CLASS_DESCRIPTIONS.get(pending_label)(pending_entity)}"
                 deliver_response(pending_label, fake_input, pending_entity, original_text)
                 last_label = pending_label
@@ -277,14 +269,14 @@ def chat(model, vectorizer):
                 pending_label = None
 
             else:
-                print("بوت: قولي أيوه أو لا؟")
+                print("بوت: قولي اه أو لا؟")
 
         elif waiting_for == "clarification":
             user_lower = user_input.lower()
 
-            if any(w in user_lower for w in ["اول", "الاول", "الأول", "1"]):
+            if any(w in user_lower for w in ["اول", "الاول", "الأول", "1","first","أول"]):
                 entity, _ = find_entity(last_user_input, last_label)
-                if entity:
+                if entity or last_label in ["greetings","out_of_scope"]:
                     fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity)}"
                     waiting_for = None
                 else:
@@ -292,10 +284,10 @@ def chat(model, vectorizer):
                     waiting_for = "followup"
                 deliver_response(last_label, fake_input, entity, original_text)
 
-            elif any(w in user_lower for w in ["تاني", "التاني", "تانى", "التانى", "2"]):
+            elif any(w in user_lower for w in ["تاني", "التاني", "تانى", "التانى", "2","second"]):
                 last_label = second_label
                 entity, _ = find_entity(last_user_input, last_label)
-                if entity:
+                if entity or last_label in ["greetings","out_of_scope"]:
                     fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity)}"
                     waiting_for = None
                 else:
@@ -303,14 +295,14 @@ def chat(model, vectorizer):
                     waiting_for = "followup"
                 deliver_response(last_label, fake_input, entity, original_text)
 
-            elif any(w in user_lower for w in ["تالت", "غير", "other", "اخر", "3"]):
+            elif any(w in user_lower for w in ["تالت", "غير", "other", "اخر", "3","غيرهم"]):
                 print("بوت: تمام، وضحلي أكتر أنت محتاج إيه بالظبط؟")
                 last_label = None
                 last_user_input = ""
                 waiting_for = None
 
             else:
-                print("بوت: قولي الأول ولا التاني ولا غيرهم؟")
+                print("بوت: قولي الخيار الأول ولا الخيار التاني ولا غيرهم؟")
 
         elif waiting_for == "followup":
             combined = last_user_input + " " + user_input
@@ -330,42 +322,21 @@ def chat(model, vectorizer):
             original_text = user_input
             best_label, s_label, best_score, diff = predict(user_input, model, vectorizer)
             entity, entity_score = find_entity(user_input, best_label)
+            if best_score < 0.25 :
+                best_label="out_of_scope"
+                response = get_response(best_label,user_input)
+                print(f"بوت: {response}")
+                waiting_for = None
 
-            if diff < 0.1:
+            elif diff < 0.1:
                 entity_best, _ = find_entity(user_input, best_label)
                 entity_second, _ = find_entity(user_input, s_label)
-
-                if entity_best and not entity_second:
-                    response = get_response(best_label, user_input, entity_best)
-                    print(f"بوت: {response}")
-                    if is_short(user_input) and best_label not in ["greetings", "out_of_scope"]:
-                        pending_entity = entity_best
-                        pending_label = best_label
-                        waiting_for = "entity_confirm"
-                    else:
-                        
-                        last_label = best_label
-                        last_user_input = user_input
-
-                elif entity_second and not entity_best:
-                    response = get_response(s_label, user_input, entity_second)
-                    print(f"بوت: {response}")
-                    if is_short(user_input) and s_label not in ["greetings", "out_of_scope"]:
-                        pending_entity = entity_second
-                        pending_label = s_label
-                        waiting_for = "entity_confirm"
-                    else:
-                        
-                        last_label = s_label
-                        last_user_input = user_input
-
-                else:
-                    question = build_clarification_question(best_label, s_label, entity_best, entity_second, user_input)
-                    print(f"بوت: {question}")
-                    last_label = best_label
-                    second_label = s_label
-                    last_user_input = user_input
-                    waiting_for = "clarification"
+                question = build_clarification_question(best_label, s_label, entity_best, entity_second, user_input)
+                print(f"بوت: {question}")
+                last_label = best_label
+                second_label = s_label
+                last_user_input = user_input
+                waiting_for = "clarification"
 
             else:
                 last_label = best_label
