@@ -55,8 +55,12 @@ FOOD_DETAILS_ENTITIES = {
     "عنب": ["عنب", "grapes"],
 }
 
-def DESCRIPTION (entity="اكل معين"): 
-   return f"عايز تعرف القيمة الغذائية ل{entity}؟"
+def DESCRIPTION(entity="اكل معين"): 
+    # لو الـ entity مبعوت وقيمته None أو فاضي، خليه ياخد القيمة الافتراضية
+    if entity is None or entity == "":
+        entity = "اكل معين"
+        
+    return f"عايز تعرف القيمة الغذائية ل{entity}؟ 🍽️"
 
 # ============================================================
 # القيم لكل 100 جرام (إلا لو محدد غير ذلك) - مصدر USDA
@@ -305,21 +309,21 @@ FOOD_DETAILS_DATA = {
 def handle(user_input, entity, is_short_func, user_data={}):
     """الـ handler الخاص بـ food_details"""
     if not entity:
-        return "عايز تعرف القيمة الغذائية لعنصر إيه بالظبط؟"
+        return "عايز تعرف القيمة الغذائية لعنصر إيه بالظبط؟ 🍽️"
     if is_short_func(user_input):
-        return f"هل عايز تعرف القيمة الغذائية لـ {entity}؟"
+        return f"هل عايز تعرف القيمة الغذائية لـ {entity}؟ 🍽️"
 
     data = FOOD_DETAILS_DATA.get(entity)
     if not data:
-        return f"[food_details | entity: {entity}] - البيانات مش موجودة"
+        return f"معلش، البيانات الغذائية لـ {entity} مش متوفرة عندي دلوقتي 🙏"
 
     return (
-        f"القيمة الغذائية لكل 100 جرام من {entity}:\n"
-        f"السعرات: {data['calories']} سعرة\n"
-        f"البروتين: {data['protein']} جرام\n"
-        f"الكارب: {data['carbs']} جرام\n"
-        f"الدهون: {data['fats']} جرام\n\n"
-        f"يتميز بـ: {data['highlight']}\n"
-        f"الفايدة: {data['benefit']}\n"
-        f"أنسب وقت للأكل: {data['best_time']}"
+        f"تمام 🍽️ القيمة الغذائية لكل 100 جرام من {entity}:\n\n"
+        f"🔥 السعرات: {data['calories']} سعرة\n"
+        f"💪 البروتين: {data['protein']} جرام\n"
+        f"🌾 الكارب: {data['carbs']} جرام\n"
+        f"🥑 الدهون: {data['fats']} جرام\n\n"
+        f"⭐ يتميز بـ: {data['highlight']}\n"
+        f"✅ الفايدة: {data['benefit']}\n"
+        f"⏰ أنسب وقت للأكل: {data['best_time']}"
     )
