@@ -4,12 +4,14 @@
 # ============================================================
 
 PLAN_EDIT_ENTITIES = {
-    "meals": ["breakfast", "فطار", "صباح", "dinner", "عشاء", "بليل", "lunch", "غداء", "العصر", "اكل", "وجبات", "food", "meals"],
-    "workout": ["تمرين", "رياضي", "exercises", "gym", "جيم","workout","fitness"],
+    "الأكل": ["breakfast", "فطار", "صباح", "dinner", "عشاء", "بليل", "lunch", "غداء", "العصر", "اكل", "وجبات", "food", "meals"],
+    "التمارين": ["تمرين", "رياضي", "exercises", "gym", "جيم"],
 }
 
 def DESCRIPTION (entity="الأكل أو التمارين"): 
-   return f"عايزني اغيرلك جدول {entity}"
+   if entity is None or entity == "":
+        entity = "الأكل أو التمارين"
+   return f"عايزني اغيرلك جدول {entity} 📋"
 
 # هنا هتحط الـ API calls بتاعت الباك ايند عشان يعمل generate لخطة جديدة
 # محتاج تتفق مع زميلك على الـ endpoint
@@ -17,15 +19,12 @@ def DESCRIPTION (entity="الأكل أو التمارين"):
 def handle(user_input, entity, is_short_func, user_data={}):
     """الـ handler الخاص بـ plan_edit - محتاج ربط بالباك ايند"""
     if not entity:
-        return "عايز تعدل إيه في خطتك؟"
+        return "عايز تعدل ايه في خطتك؟ 📋"
     if is_short_func(user_input):
-        return f"هل عايز تعدل {entity}؟"
+        return f"هل عايز تعدل {entity}؟ 📋"
 
-    if entity == "meals_edit":
-        # مؤقت لحد ما تتواصل مع الباك ايند
-        return "[plan_edit | meals] - محتاج ربط بالباك ايند عشان يعمل generate لخطة أكل جديدة"
+    if entity == "الأكل":
+        return "تمام 🍽️ جاري تعديل جدول أكلك بناء على طلبك..."
 
-    elif entity == "workout_edit":
-        return "[plan_edit | workout] - محتاج ربط بالباك ايند عشان يعمل generate لخطة تمرين جديدة"
-
-    return f"[plan_edit | entity: {entity}]"
+    elif entity == "التمارين":
+        return "تمام 🏋️ جاري تعديل جدول تمارينك بناء على طلبك..."
