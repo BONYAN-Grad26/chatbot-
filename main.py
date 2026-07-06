@@ -121,7 +121,7 @@ def process_message(user_input: str, state: dict, profile: Optional[Dict[str, An
 
         if best_score < 0.25 :
                 best_label="out_of_scope"
-                response = get_response(best_label,user_input)
+                response = get_response(best_label,user_input,None)
                 print(f"بوت: {response}")
                 waiting_for = None
 
