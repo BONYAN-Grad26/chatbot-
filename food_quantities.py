@@ -37,10 +37,26 @@ FOOD_QUANTITIES_ENTITIES = {
     "الفيتامينات": ["vitamin", "فيتامين"],
 }
 
+# أسماء العناصر بالإنجليزي
+ENTITY_EN = {
+    "السعرات الحرارية": "calories",
+    "البروتين": "protein",
+    "الكارب": "carbs",
+    "الدهون الصحية": "healthy fats",
+    "المياه": "water",
+    "الألياف": "fiber",
+    "الكرياتين": "creatine",
+    "الكافيين": "caffeine",
+    "الفيتامينات": "vitamins",
+}
 
-def DESCRIPTION(entity="عنصر معين؟"):
+
+def DESCRIPTION(entity="عنصر معين؟", lang="ar"):
     if entity is None or entity == "":
-        entity = "عنصر معين"
+        entity = "عنصر معين" if lang != "en" else "a specific nutrient"
+    if lang == "en":
+        entity_en = ENTITY_EN.get(entity, entity)
+        return f"Want me to calculate your daily {entity_en} needs? 🧮"
     return f"عايزني احسبلك احتياجك اليومي من {entity} 🧮"
 
 
@@ -164,12 +180,14 @@ def calculate_protein(user_data):
         grams_low = round(base * low)
         grams_high = round(base * high)
         basis = "الكتلة الخالية من الدهون (Lean Mass)"
+        basis_en = "lean body mass"
 
     elif goal == GOAL_GAIN:
         low, high = 1.6, 2.2
         grams_low = round(weight * low)
         grams_high = round(weight * high)
         basis = "وزن الجسم الكلي"
+        basis_en = "total body weight"
 
     else:  # Maintenance / Improve Health -> حسب مستوى النشاط
         activity_ranges = {
@@ -182,6 +200,7 @@ def calculate_protein(user_data):
         grams_low = round(weight * low)
         grams_high = round(weight * high)
         basis = "وزن الجسم الكلي"
+        basis_en = "total body weight"
 
     # تعويض جودة الامتصاص الأقل للبروتين النباتي
     if diet == DIET_VEGAN:
@@ -197,6 +216,7 @@ def calculate_protein(user_data):
         "target": target,
         "calories": calories,
         "basis": basis,
+        "basis_en": basis_en,
         "range_per_kg": (low, high),
         "vegan_adjusted": diet == DIET_VEGAN,
     }
@@ -395,13 +415,27 @@ def calculate_caffeine(user_data):
 
 
 # ============================================================
-# Formatters - تحويل الأرقام لرسالة عربية مفهومة
+# Formatters - تحويل الأرقام لرسالة عربية أو إنجليزية مفهومة
 # ============================================================
 
-def _format_calories(user_data):
+def _format_calories(user_data, lang="ar"):
     tdee = _get(user_data, "tdee")
     target = _get(user_data, "dailyCalorieTarget")
     goal = _get(user_data, "dietGoal", "")
+
+    if lang == "en":
+        if not tdee and not target:
+            return "I need more accurate weight/height/activity data to calculate your calories; please complete your health profile. 📋"
+        lines = []
+        if tdee:
+            lines.append(f"⚡ Your estimated daily energy expenditure (TDEE): {round(tdee)} kcal")
+        if target:
+            lines.append(f"🎯 Your daily target based on your goal ({goal or 'maintaining weight'}): {round(target)} kcal")
+        tips_text = "\n".join(lines)
+        return (
+            f"Sure 🔥 Here's your calorie breakdown:\n\n{tips_text}\n\n"
+            f"💡 This number is an average; if you notice you're gaining or losing weight unexpectedly fast, let me know so we can adjust it."
+        )
 
     if not tdee and not target:
         return "محتاج بيانات وزن/طول/نشاط أدق عشان أحسبلك السعرات، كمل بروفايلك الصحي كامل. 📋"
@@ -419,9 +453,21 @@ def _format_calories(user_data):
     )
 
 
-def _format_protein(user_data):
+def _format_protein(user_data, lang="ar"):
     p = calculate_protein(user_data)
     low, high = p["range_per_kg"]
+
+    if lang == "en":
+        vegan_note = "\n\n🌱 We bumped the number up a bit since your diet is vegan, and plant protein absorbs less efficiently than animal protein." if p["vegan_adjusted"] else ""
+        return (
+            f"Great 💪 Your daily protein needs are roughly between {p['low']} and {p['high']} g "
+            f"(about {p['target']} g on average), based on {low}-{high} g per kg of {p['basis_en']}."
+            f"{vegan_note}\n\n"
+            f"📚 This is based on International Society of Sports Nutrition (ISSN) recommendations.\n"
+            f"⏰ Try to spread it across 3-4 meals with 20-40g of protein each so your body can use it best.\n"
+            f"🍗 Best protein sources: chicken breast, red meat, eggs, cottage cheese, and Greek yogurt"
+        )
+
     vegan_note = "\n\n🌱 زودنا الرقم شوية لأن نظامك نباتي (Vegan)، والبروتين النباتي جودته في الامتصاص أقل من الحيواني." if p["vegan_adjusted"] else ""
     return (
         f"تمام 💪 احتياجك اليومي من البروتين تقريبًا بين {p['low']} و {p['high']} جم "
@@ -433,9 +479,19 @@ def _format_protein(user_data):
     )
 
 
-def _format_fats(user_data):
+def _format_fats(user_data, lang="ar"):
     f = calculate_fats(user_data)
     pct_low, pct_high = f["pct_range"]
+
+    if lang == "en":
+        return (
+            f"Sure 🥑 Your daily healthy fat needs are roughly between {f['low']} and {f['high']} g "
+            f"(about {int(pct_low*100)}%-{int(pct_high*100)}% of your daily calories, based on your diet type).\n\n"
+            f"🎯 Focus on healthy fat sources like olive oil, avocado, nuts, and fatty fish, "
+            f"and avoid trans fats (fried fast food and processed shortening) as much as possible.\n"
+            f"🥑 Best healthy fat sources: olive oil, avocado, and nuts"
+        )
+
     return (
         f"تمام 🥑 احتياجك اليومي من الدهون الصحية تقريبًا بين {f['low']} و {f['high']} جم "
         f"(حوالي {int(pct_low*100)}%-{int(pct_high*100)}% من سعراتك اليومية، بناءً على نظامك الغذائي).\n\n"
@@ -445,11 +501,23 @@ def _format_fats(user_data):
     )
 
 
-def _format_carbs(user_data):
+def _format_carbs(user_data, lang="ar"):
     p = calculate_protein(user_data)
     f = calculate_fats(user_data)
     c = calculate_carbs(user_data, p, f)
     low_gkg, high_gkg = c["activity_range_per_kg"]
+
+    if lang == "en":
+        paleo_note = "\n\n🥩 We lowered the number a bit since a Paleo diet doesn't rely on grains or legumes as a main carb source." if c["paleo_adjusted"] else ""
+        return (
+            f"Sure 🌾 Your daily carbohydrate needs are roughly between {c['low']} and {c['high']} g, "
+            f"which covers your energy needs after accounting for protein and fat.\n\n"
+            f"🏃 Based on your activity level, the general athletic range is around {low_gkg}-{high_gkg} g per kg of body weight."
+            f"{paleo_note}\n\n"
+            f"🎯 Prefer complex sources like oats, brown rice, potatoes, and starchy vegetables.\n"
+            f"🌾 Best carb sources: oats, white rice, legumes, and whole wheat bread"
+        )
+
     paleo_note = "\n\n🥩 خفّضنا الرقم شوية لأن نظام Paleo مبيعتمدش على الحبوب أو البقوليات كمصدر أساسي للكارب." if c["paleo_adjusted"] else ""
     return (
         f"تمام 🌾 احتياجك اليومي من الكاربوهيدرات تقريبًا بين {c['low']} و {c['high']} جم، "
@@ -461,8 +529,19 @@ def _format_carbs(user_data):
     )
 
 
-def _format_water(user_data):
+def _format_water(user_data, lang="ar"):
     w = calculate_water(user_data)
+
+    if lang == "en":
+        extra_note = ""
+        if w["extra_for_activity_ml"]:
+            extra_note = f" (we added {w['extra_for_activity_ml']} ml extra for your activity level)"
+        return (
+            f"Sure 💧 Your daily water needs are roughly {w['liters']} liters (about {w['ml']} ml){extra_note}.\n\n"
+            f"🌡️ This value increases in hot weather or if you sweat a lot during training, and decreases slightly "
+            f"if you eat a lot of vegetables and fruit (since they give you fluids without drinking)."
+        )
+
     extra_note = ""
     if w["extra_for_activity_ml"]:
         extra_note = f" (زودنا {w['extra_for_activity_ml']} مل إضافية عشان مستوى نشاطك)"
@@ -473,8 +552,16 @@ def _format_water(user_data):
     )
 
 
-def _format_fiber(user_data):
+def _format_fiber(user_data, lang="ar"):
     f = calculate_fiber(user_data)
+
+    if lang == "en":
+        return (
+            f"Sure 🌿 Your daily fiber needs are roughly {f['target']} g.\n\n"
+            f"🥦 Key sources: leafy greens, legumes (lentils, fava beans, chickpeas), oats, and unpeeled fruit.\n"
+            f"✅ Fiber helps with fullness, digestive health, and blood sugar control."
+        )
+
     return (
         f"تمام 🌿 احتياجك اليومي من الألياف تقريبًا {f['target']} جم.\n\n"
         f"🥦 أهم مصادرها: الخضار الورقي، البقوليات (عدس، فول، حمص)، الشوفان، والفواكه بقشرها.\n"
@@ -482,8 +569,17 @@ def _format_fiber(user_data):
     )
 
 
-def _format_creatine(user_data):
+def _format_creatine(user_data, lang="ar"):
     c = calculate_creatine(user_data)
+
+    if lang == "en":
+        return (
+            f"Sure ⚡ The recommended daily dose of creatine monohydrate is {c['maintenance_g']} g per day, "
+            f"which stays roughly the same regardless of your weight (since the effective scientific dose saturates at a certain point).\n\n"
+            f"🚀 If you want faster results, you can optionally do a loading phase at a higher dose (~{c['loading_g_per_day']} g) "
+            f"split across the day for 5-7 days only, but it's never necessary and you can skip it and just take the regular dose from day one."
+        )
+
     return (
         f"تمام ⚡ الجرعة اليومية الموصى بيها من الكرياتين مونوهيدرات: {c['maintenance_g']} جم يوميًا، "
         f"وده رقم ثابت تقريبًا معظم الوقت مهما كان وزنك (لأن الجرعة الفعالة علميًا بتتشبع عند حد معين).\n\n"
@@ -492,8 +588,19 @@ def _format_creatine(user_data):
     )
 
 
-def _format_caffeine(user_data):
+def _format_caffeine(user_data, lang="ar"):
     c = calculate_caffeine(user_data)
+
+    if lang == "en":
+        caution = ""
+        if c["capped_by_medical_notes"]:
+            caution = "\n\n⚠️ We noticed you have medical notes that could interact with caffeine, so this number was calculated more cautiously - please check with your doctor."
+        return (
+            f"Sure ☕ Your safe daily upper limit for caffeine is roughly {c['safe_upper_mg']} mg "
+            f"(about {round(c['safe_upper_mg']/95)} cups of coffee, assuming ~95 mg per cup).{caution}\n\n"
+            f"🌙 Try to avoid caffeine within 6 hours of bedtime so it doesn't affect your sleep quality."
+        )
+
     caution = ""
     if c["capped_by_medical_notes"]:
         caution = "\n\n⚠️ لاحظنا إن عندك ملاحظات طبية ممكن تتأثر بالكافيين، فالرقم ده اتحسب بحذر أكتر - يفضل تتأكد من دكتورك."
@@ -504,8 +611,20 @@ def _format_caffeine(user_data):
     )
 
 
-def _format_vitamins(user_data):
+def _format_vitamins(user_data, lang="ar"):
     is_female = _gender(user_data) == GENDER_FEMALE
+
+    if lang == "en":
+        extra = "especially iron, vitamin D, and folic acid, which matter more for women." if is_female else "vitamin D and B12 matter especially if you're very active or your diet has restrictions."
+        return (
+            "Sure 💊 Vitamins are hard to calculate precisely without a blood test, but here are some general important points for you:\n\n"
+            "☀️ Vitamin D: important for bones and hormones; most people are deficient, especially with low sun exposure.\n"
+            "⚡ Vitamin B12: important for energy, often deficient in people who eat fully plant-based.\n"
+            "🛡️ Vitamin C: important for immunity and recovery after training.\n\n"
+            f"📌 {extra}\n\n"
+            "🩸 If you want a precise number, it's best to get a full blood panel and review it with a doctor or dietitian."
+        )
+
     extra = "خصوصًا الحديد وفيتامين د وحمض الفوليك، دول بيكونوا مهمين أكتر للستات." if is_female else "فيتامين د وB12 مهمين خصوصًا لو نشاطك عالي أو نظامك الغذائي فيه قيود."
     return (
         "تمام 💊 الفيتامينات صعب تتحسب برقم دقيق من غير تحليل دم، لكن في نقط عامة مهمة ليك:\n\n"
@@ -534,9 +653,29 @@ _FORMATTERS = {
 # Handler
 # ============================================================
 
-def handle(user_input, entity, is_short_func, user_data=None):
+def handle(user_input, entity, is_short_func, user_data=None, lang="ar"):
     """الـ handler الخاص بـ food_quantities - بيحسب بناءً على HealthProfileData بتاع اليوزر"""
     user_data = user_data or {}
+
+    if lang == "en":
+        if not entity:
+            return "Which nutrient would you like me to calculate your needs for? 🧮"
+
+        entity_en = ENTITY_EN.get(entity, entity)
+        if is_short_func(user_input):
+            return f"Do you want to know your daily {entity_en} needs? 🧮"
+
+        formatter = _FORMATTERS.get(entity)
+        if not formatter:
+            return f"Sorry, data about {entity_en} isn't available yet 🙏"
+
+        if entity not in ("الكافيين", "الفيتامينات") and not _has_user_data(user_data):
+            return (
+                f"To calculate your precise {entity_en} needs, I first need some health data about you 📋 "
+                f"(weight, height, gender, activity level, and your goal). Could you complete your health profile and come back to me?"
+            )
+
+        return formatter(user_data, "en")
 
     if not entity:
         return "عايزني احسبلك احتياجك من عنصر ايه بالظبط؟ 🧮"
@@ -555,4 +694,4 @@ def handle(user_input, entity, is_short_func, user_data=None):
             f"(الوزن، الطول، الجندر، مستوى النشاط، وهدفك)، تقدر تكمل بيانات البروفايل الصحي بتاعك وارجعلي؟"
         )
 
-    return formatter(user_data)
+    return formatter(user_data, "ar")
