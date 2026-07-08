@@ -136,7 +136,7 @@ def process_message(user_input: str, state: dict, profile: Optional[Dict[str, An
         best_label, s_label, best_score, diff = predict(user_input, model, vectorizer)
         entity, _ = find_entity(user_input, best_label)
 
-        if best_score < 0.25 :
+        if best_score < 0.18 or best_label =="out_of_scope":
                 best_label="out_of_scope"
                 response = get_response(best_label, user_input, None, current_profile, lang)
                 print(f"بوت: {response}")
