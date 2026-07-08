@@ -26,8 +26,12 @@ CLASS_DESCRIPTIONS = {
     "plan_edit":           plan_edit.DESCRIPTION,
     "food_details":      food_details.DESCRIPTION,
     "general_advice":    general_advice.DESCRIPTION,
-    "greetings":            lambda entity=None: "لسه محددتش عايز ايه 🤔",
-    "out_of_scope":      lambda entity=None: "محتاج حاجة خارج التغذية والتمرين؟ 🤔",
+    "greetings":            lambda entity=None, lang="ar": (
+        "You haven't told me what you need yet 🤔" if lang == "en" else "لسه محددتش عايز ايه 🤔"
+    ),
+    "out_of_scope":      lambda entity=None, lang="ar": (
+        "Do you need something outside nutrition and exercise? 🤔" if lang == "en" else "محتاج حاجة خارج التغذية والتمرين؟ 🤔"
+    ),
 }
 
 ENTITY_KEYWORDS = {
@@ -49,7 +53,9 @@ INTENT_HANDLERS = {
     "food_details":     food_details.handle,
     "general_advice":     general_advice.handle,
     "greetings":            greetings.handle,
-    "out_of_scope":        lambda user_input, entity, is_short_func, user_data={}: (
+    "out_of_scope":        lambda user_input, entity, is_short_func, user_data={}, lang="ar": (
+        "I'm a chatbot specialized in nutrition and exercise questions and tips only 🏋️🍽️... sorry, I can't help you with what you're asking about"
+        if lang == "en" else
         "أنا بوت متخصص في اسئلة ونصايح التغذية والتمارين بس 🏋️🍽️... معلش مقدرش أساعدك في اللي بتسأل عليه"
     ),
 }
@@ -82,6 +88,30 @@ def preprocess(text):
 
 def is_short(text):
     return len(text.strip().split()) <= 2
+
+# ============================================================
+# اكتشاف اللغة
+# ============================================================
+_ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+_LATIN_RE = re.compile(r'[A-Za-z]')
+
+def detect_language(text, previous=None):
+    """
+    بيكتشف لغة الرسالة: لو فيها حروف عربي بيعتبرها عربي (حتى لو فيها كلمات
+    إنجليزية جوه زي أسماء تمارين)، ولو مفيش عربي خالص وفيها حروف لاتينية
+    بيعتبرها إنجليزي.
+
+    لو الرسالة مفيهاش أي حروف خالص (زي رقم لوحده "1" أو "2" رداً على سؤال
+    توضيحي، أو إيموجي بس) - معندناش أي إشارة لغوية نعتمد عليها، فبنرجع
+    "previous" (آخر لغة اتكلم بيها اليوزر في المحادثة) بدل ما نفترض عربي
+    بشكل تعسفي ونكسر الاستمرارية لو المحادثة كانت ماشية بالإنجليزي.
+    """
+    if text:
+        if _ARABIC_RE.search(text):
+            return "ar"
+        if _LATIN_RE.search(text):
+            return "en"
+    return previous or "ar"
 
 # ============================================================
 # FUZZY SEARCH
@@ -206,26 +236,32 @@ def predict(text, model, vectorizer):
 # ============================================================
 # RESPONSE DISPATCH
 # ============================================================
-def get_response(label, user_input, entity, user_data={}):
+def get_response(label, user_input, entity, user_data={}, lang="ar"):
     handler = INTENT_HANDLERS.get(label)
     if handler:
-        result = handler(user_input, entity, is_short, user_data)
+        result = handler(user_input, entity, is_short, user_data, lang)
         if result is None:
             return f"[{label} | entity: {entity}]"
         return result
-    return "معلش، مش قادر أساعدك في اللي بتسأل عنه دلوقتي 🙏"
+    return (
+        "Sorry, I can't help you with what you're asking about right now 🙏"
+        if lang == "en" else
+        "معلش، مش قادر أساعدك في اللي بتسأل عنه دلوقتي 🙏"
+    )
 
-def deliver_response(label, user_input, entity, original_text):
-    response = get_response(label, user_input, entity)
+def deliver_response(label, user_input, entity, original_text, lang="ar"):
+    response = get_response(label, user_input, entity, {}, lang)
     print(f"بوت: {response}")
 
     return label
 
-def build_clarification_question(best_label, s_label, entity_best, entity_second, user_input):
+def build_clarification_question(best_label, s_label, entity_best, entity_second, user_input, lang="ar"):
     desc1 = CLASS_DESCRIPTIONS.get(best_label, best_label)
     desc2 = CLASS_DESCRIPTIONS.get(s_label, s_label)
+    if lang == "en":
+        return f"{desc1(entity_best, lang)} or {desc2(entity_second, lang)}, or something else entirely ❓"
     return f"{desc1(entity_best)} ولا {desc2(entity_second)} ولا عايز حاجة تانية ❓"
-  
+
 # ============================================================
 # MAIN CHAT LOOP
 # ============================================================
@@ -241,6 +277,7 @@ def chat(model, vectorizer):
     pending_entity = None
     pending_label = None
     original_text = ""
+    current_lang = "ar"
 
     while True:
         user_input = input("أنت: ").strip()
@@ -251,25 +288,31 @@ def chat(model, vectorizer):
         if not user_input:
             continue
 
+        # ==== تعديل جديد: اللغة بتتقفل على لغة "السؤال الأساسي" ====
+        # لو إحنا في فلو توضيحي/تأكيدي (entity_confirm/clarification/followup)
+        # منعيدش اكتشاف اللغة من الرد القصير ده، وبنفضل مستخدمين لغة السؤال
+        # اللي بدأ الفلو. اللغة بتتحدث فعليًا بس وقت سؤال أساسي جديد (تحت).
+        lang = current_lang
+
         if waiting_for == "entity_confirm":
             user_lower = user_input.lower()
 
             if any(w in user_lower for w in ["اه", "أيوه", "ايوه", "yes", "آه","صح","correct","yeah"]):
-                fake_input = f"{CLASS_DESCRIPTIONS.get(pending_label)(pending_entity)}"
-                deliver_response(pending_label, fake_input, pending_entity, original_text)
+                fake_input = f"{CLASS_DESCRIPTIONS.get(pending_label)(pending_entity, lang)}"
+                deliver_response(pending_label, fake_input, pending_entity, original_text, lang)
                 last_label = pending_label
                 waiting_for = None
                 pending_entity = None
                 pending_label = None
 
             elif any(w in user_lower for w in ["لا", "no"]):
-                print("بوت: معلش، ممكن توضحلي أكتر؟")
+                print("بوت: " + ("Alright, can you tell me more?" if lang == "en" else "معلش، ممكن توضحلي أكتر؟"))
                 waiting_for = None
                 pending_entity = None
                 pending_label = None
 
             else:
-                print("بوت: قولي اه أو لا؟")
+                print("بوت: " + ("Yes or no?" if lang == "en" else "قولي اه أو لا؟"))
 
         elif waiting_for == "clarification":
             user_lower = user_input.lower()
@@ -277,61 +320,65 @@ def chat(model, vectorizer):
             if any(w in user_lower for w in ["اول", "الاول", "الأول", "1","first","أول"]):
                 entity, _ = find_entity(last_user_input, last_label)
                 if entity or last_label in ["greetings","out_of_scope"]:
-                    fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity)}"
+                    fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity, lang)}"
                     waiting_for = None
                 else:
                     fake_input = last_user_input
                     waiting_for = "followup"
-                deliver_response(last_label, fake_input, entity, original_text)
+                deliver_response(last_label, fake_input, entity, original_text, lang)
 
             elif any(w in user_lower for w in ["تاني", "التاني", "تانى", "التانى", "2","second","ثاني", "الثاني", "ثانى", "الثانى"]):
                 last_label = second_label
                 entity, _ = find_entity(last_user_input, last_label)
                 if entity or last_label in ["greetings","out_of_scope"]:
-                    fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity)}"
+                    fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity, lang)}"
                     waiting_for = None
                 else:
                     fake_input = last_user_input
                     waiting_for = "followup"
-                deliver_response(last_label, fake_input, entity, original_text)
+                deliver_response(last_label, fake_input, entity, original_text, lang)
 
             elif any(w in user_lower for w in ["تالت", "غير", "other", "اخر", "3","غيرهم","أخر","آخر"]):
-                print("بوت: تمام، وضحلي أكتر أنت محتاج إيه بالظبط؟")
+                print("بوت: " + ("Alright, tell me more exactly what you need." if lang == "en" else "تمام، وضحلي أكتر أنت محتاج إيه بالظبط؟"))
                 last_label = None
                 last_user_input = ""
                 waiting_for = None
 
             else:
-                print("بوت: قولي الخيار الأول ولا الخيار التاني ولا حاجة غيرهم؟")
+                print("بوت: " + ("Say the first option, the second, or something else?" if lang == "en" else "قولي الخيار الأول ولا الخيار التاني ولا حاجة غيرهم؟"))
 
         elif waiting_for == "followup":
             combined = last_user_input + " " + user_input
             entity, score = find_entity(combined, last_label)
 
             if not entity:
-                print("بوت: عذراً، مش عندي معلومات عن ده دلوقتي!")
+                print("بوت: " + ("Sorry, I don't have information about that right now!" if lang == "en" else "عذراً، مش عندي معلومات عن ده دلوقتي!"))
                 waiting_for = None
             else:
-                fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity)}"
-                deliver_response(last_label, fake_input, entity, original_text)
+                fake_input = f"{CLASS_DESCRIPTIONS.get(last_label)(entity, lang)}"
+                deliver_response(last_label, fake_input, entity, original_text, lang)
                 waiting_for = None
 
             last_user_input = combined
 
         else:
+            # ==== تعديل جديد: سؤال أساسي جديد -> نعيد اكتشاف اللغة ونقفلها ====
+            lang = detect_language(user_input, current_lang)
+            current_lang = lang
+
             original_text = user_input
             best_label, s_label, best_score, diff = predict(user_input, model, vectorizer)
             entity, entity_score = find_entity(user_input, best_label)
-            if best_score < 0.18 :
+            if best_score < 0.18 or best_label =="out_of_scope":
                 best_label="out_of_scope"
-                response = get_response(best_label,user_input,None)
+                response = get_response(best_label, user_input, None, {}, lang)
                 print(f"بوت: {response}")
                 waiting_for = None
 
             elif diff < 0.1:
                 entity_best, _ = find_entity(user_input, best_label)
                 entity_second, _ = find_entity(user_input, s_label)
-                question = build_clarification_question(best_label, s_label, entity_best, entity_second, user_input)
+                question = build_clarification_question(best_label, s_label, entity_best, entity_second, user_input, lang)
                 print(f"بوت: {question}")
                 last_label = best_label
                 second_label = s_label
@@ -343,23 +390,23 @@ def chat(model, vectorizer):
                 last_user_input = user_input
 
                 if is_short(user_input) and entity and best_label not in ["greetings", "out_of_scope"]:
-                    response = get_response(best_label, user_input, entity)
+                    response = get_response(best_label, user_input, entity, {}, lang)
                     print(f"بوت: {response}")
                     pending_entity = entity
                     pending_label = best_label
                     waiting_for = "entity_confirm"
 
                 elif entity:
-                    deliver_response(best_label, user_input, entity, original_text)
+                    deliver_response(best_label, user_input, entity, original_text, lang)
                     waiting_for = None
 
                 elif not entity and best_label not in ["greetings", "out_of_scope"]:
-                    response = get_response(best_label, user_input, None)
+                    response = get_response(best_label, user_input, None, {}, lang)
                     print(f"بوت: {response}")
                     waiting_for = "followup"
 
                 else:
-                    deliver_response(best_label, user_input, None, original_text)
+                    deliver_response(best_label, user_input, None, original_text, lang)
                     waiting_for = None
 
 # ============================================================
